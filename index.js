@@ -2,12 +2,28 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 const app = express();
 const port = process.env.PORT || 5001;
 
 // middleware
 app.use(cors());
 app.use(express.json());
+
+// Verify Token middleware
+const verifyToken = (req, res, next) => {
+  const auth = req.headers.authorization;
+  console.log("Inside", auth)
+  if (!auth) return res.status(401).send({ message: "forbidden access" });
+  const token = auth.split(" ")[1]
+  jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "forbidden access" });
+    }
+    req.user = decoded;
+    next();
+  });
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.85wcl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -36,19 +52,47 @@ async function run() {
     const reviewCollection = db.collection("reviews");
     const cartColletion = db.collection("carts");
 
-    app.get("/users", async (req, res) => {
-      const result = await userCollection .find().toArray();
+    // Generate JWT
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.SECRET_KEY, {
+        expiresIn: "365d",
+      });
+      res.send({ token });
+    });
+
+    app.get("/users", verifyToken, async (req, res) => {
+      const result = await userCollection.find().toArray();
       res.send(result);
     });
 
     app.post("/users", async (req, res) => {
       const user = req.body;
-      const query = {email: user.email}
-      const existingUser = await userCollection.findOne(query)
-      if (existingUser){
-        return res.send({message: "user already exits", insertedId: null})
+      const query = { email: user.email };
+      const existingUser = await userCollection.findOne(query);
+      if (existingUser) {
+        return res.send({ message: "user already exits", insertedId: null });
       }
       const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch("/users/admin/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          role: "admin",
+        },
+      };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
       res.send(result);
     });
 
