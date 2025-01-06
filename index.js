@@ -13,7 +13,7 @@ app.use(express.json());
 // Verify Token middleware
 const verifyToken = (req, res, next) => {
   const auth = req.headers.authorization;
-  console.log("Inside", auth);
+  // console.log("Inside", auth);
   if (!auth) return res.status(401).send({ message: "forbidden access" });
   const token = auth.split(" ")[1];
   jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
@@ -123,6 +123,22 @@ async function run() {
 
     app.get("/menu", async (req, res) => {
       const result = await menuCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.post("/menu", verifyToken, verifyAdmin, async (req, res) => {
+      const item = req.body;
+      const result = await menuCollection.insertOne(item);
+      res.send(result);
+    });
+
+    app.delete("/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      // console.log(id)
+      const query = { _id: new ObjectId(id) };
+      // console.log(query)
+      const result = await menuCollection.deleteOne(query)
+      // console.log(result)
       res.send(result);
     });
 
