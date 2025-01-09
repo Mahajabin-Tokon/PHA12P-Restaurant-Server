@@ -192,7 +192,7 @@ async function run() {
     });
 
     app.get("/payments/:email", verifyToken, async (req, res) => {
-      const email = req.query.email;
+      const email = req.params.email;
       const query = { email: email };
       if (email !== req.decoded.email) {
         return res.status(403).send({ message: "forbidden" });
