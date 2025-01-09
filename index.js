@@ -4,6 +4,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const app = express();
+const stripe = require("stripe")(process.env.PAYMENT_SECRET_KEY);
 const port = process.env.PORT || 5001;
 
 // middleware
@@ -51,6 +52,7 @@ async function run() {
     const menuCollection = db.collection("menu");
     const reviewCollection = db.collection("reviews");
     const cartColletion = db.collection("carts");
+    const paymentColletion = db.collection("payments");
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
@@ -102,17 +104,22 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/users/admin/:id", verifyToken, verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          role: "admin",
-        },
-      };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/users/admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            role: "admin",
+          },
+        };
+        const result = await userCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      }
+    );
 
     app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -137,7 +144,7 @@ async function run() {
       // console.log(id)
       const query = { _id: new ObjectId(id) };
       // console.log(query)
-      const result = await menuCollection.deleteOne(query)
+      const result = await menuCollection.deleteOne(query);
       // console.log(result)
       res.send(result);
     });
@@ -166,6 +173,46 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await cartColletion.deleteOne(query);
       res.send(result);
+    });
+
+    // Payment
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      // Create a PaymentIntent with the order amount and currency
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "cad",
+        payment_method_types: ["card"],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    app.get("/payments/:email", verifyToken, async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "forbidden" });
+      }
+      const result = await paymentColletion.find(query).toArray();
+      res.send(result);
+    });
+
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+      const paymentResult = await paymentColletion.insertOne(payment);
+      console.log("Payment info", payment);
+
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        },
+      };
+      const deleteResult = await cartColletion.deleteMany(query);
+      res.send({ paymentResult, deleteResult });
     });
   } finally {
     // Ensures that the client will close when you finish/error
